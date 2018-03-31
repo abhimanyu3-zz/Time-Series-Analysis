@@ -1,0 +1,134 @@
+---
+title: "Assignmnt_Week5"
+author: "Abhimanyu Kumar"
+date: "2/11/2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Time Series Analysis
+
+Any metric that is measured over regular time intervals makes a Time Series. Example: Weather data, Stock prices, Industry forecasts, etc are some of the common ones.
+
+A time series can be broken down to its components so as to systematically understand, analyze, model and forecast it. This is a beginners introduction to time series analysis, answering fundamental questions such as:
+
+What are the components of a time series,
+What is a stationary time series,
+How to decompose it,
+How to de-trend, de-seasonalize a time series,
+What is auto correlation etc.
+
+## Creating Time series in R.
+
+we can use ts() function aftre importing your data into R. The inputData used here is ideally a numeric vector of the class ‘numeric’ or ‘integer’.
+
+```{r cars}
+ts (AirPassengers, frequency = 4, start = c(1959, 2)) # frequency 4 => Quarterly Data
+ts (1:10, frequency = 12, start = 1990) # freq 12 => Monthly data. 
+ts (AirPassengers, start=c(2009), end=c(2014), frequency=1) # Yearly Data
+```
+
+## Extracting the trend, seasonality and error?
+
+The decompose() and forecast::stl() splits the time series into seasonality, trend and error components.
+
+```{r pressure, echo=FALSE}
+tsData <- EuStockMarkets[, 1] # ts data
+decomposedRes <- decompose(tsData, type="mult") # use type = "additive" for additive components
+plot (decomposedRes) # see plot below
+stlRes <- stl(tsData, s.window = "periodic")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Creating lags of a time-series ?
+
+When the time base is shifted by a given number of periods, a Lag of time series is created. Lags of a time series are often used as explanatory variables to model the actual time series itself. The underlying reasoning is that the state of the time series few periods back may still has an influence on the series current state.
+
+```{r}
+laggedTS <- lag(tsData, 3) # shifted 3 periods earlier. Use `-3` to shift by 3 periods forward.
+```
+
+```{r}
+library(DataCombine)
+myDf <- as.data.frame(tsData)
+myDf <- slide(myDf, "x", NewVar = "xLag1", slideBy = -1)  # create lag1 variable
+myDf <- slide(myDf, "x", NewVar = "xLead1", slideBy = 1)  # create lead1 variable
+head(myDf)
+```
+
+Autocorrelation is the correlation of a Time Series with lags of itself. This is a significant metric because,
+
+It shows if the previous states (lagged observations) of the time series has an influence on the current state. In the autocorrelation chart, if the autocorrelation crosses the dashed blue line, it means that specific lag is significantly correlated with current series. For example, in autocorrelation chart of AirPassengers - the top-left chart (below), there is significant autocorrelation for all the lags shown on x-axis.
+
+It is used commonly to determine if the time series is stationary or not. A stationary time series will have the autocorrelation fall to zero fairly quickly but for a non-stationary series it drops gradually.
+
+Partial Autocorrelation is the correlation of the time series with a lag of itself, with the linear dependence of all the lags between them removed.
+
+```{r}
+# both acf() and pacf() generates plots by default
+acfRes <- acf(AirPassengers) # autocorrelation
+pacfRes <- pacf(AirPassengers)  # partial autocorrelation
+ccfRes <- ccf(mdeaths, fdeaths, ylab = "cross-correlation") # computes cross correlation between 2 timeseries.
+head(ccfRes[[1]])
+```
+
+## De-trending a time series ?
+
+Use linear regression to model the Time Series data with linear indices (Ex: 1, 2, .. n). The resulting model’s residuals is a representation of the time series devoid of the trend. In case, if some trend is left over to be seen in the residuals (like what it seems to be with ‘JohnsonJohnson’ data below), then you might wish to add few predictors to the lm() call (like a forecast::seasonaldummy, forecast::fourier or may be a lag of the series itself), until the trend is filtered.
+
+```{r}
+trModel <- lm(JohnsonJohnson ~ c(1:length(JohnsonJohnson)))
+plot(resid(trModel), type="l")  # resid(trModel) contains the de-trended series.
+```
+
+## De-seasonalizing a time series in R?
+De-seasonalizing throws insight about the seasonal pattern in the time series and helps to model the data without the seasonal effects. So how to de-seasonalize? Step 1: De-compose the Time series using forecast::stl() Step 2: use seasadj() from ‘forecast’ package
+```{r}
+library(forecast)
+TS <- AirPassengers
+ts.stl <- stl(TS,"periodic")  # decompose the TS
+ts.sa <- seasadj(ts.stl)  # de-seasonalize
+plot(AirPassengers, type="l")  # original series
+plot(ts.sa, type="l")  # seasonal adjusted
+seasonplot(ts.sa, 12, col=rainbow(12), year.labels=TRUE, main="Seasonal plot: Airpassengers") # seasonal frequency set as 12 for monthly data.
+```
+
+## Method to test if the time series is stationary or not?
+
+Use Augmented Dickey-Fuller Test (adf test). A p-Value of less than 0.05 in adf.test() indicates that it is stationary.
+```{r}
+library(tseries)
+adf.test(tsData) # p-value < 0.05 indicates the TS is stationary
+kpss.test(tsData)
+```
+
+## Methods to make the time series stationary
+
+Differencing a time series means, to subtract each data point in the series from its successor. It is commonly used to make a time series stationary. For most time series patterns, 1 or 2 differencing is necessary to make it a stationary series.
+
+But if the time series appears to be seasonal, a better approach is to difference with respective season’s data points to remove seasonal effect. After that, if needed, difference it again with successive data points. But, How to know how many differencing is needed? the nsdiffs and ndiffs from forecast package can help find out how many seasonal differencing and regular differencing respectively is needed to make the series stationary.
+```{r}
+# Seasonal Differencing
+nsdiffs(AirPassengers)  # number for seasonal differencing needed
+#> 1
+AirPassengers_seasdiff <- diff(AirPassengers, lag=frequency(AirPassengers), differences=1)  # seasonal differencing
+plot(AirPassengers_seasdiff, type="l", main="Seasonally Differenced")  # still not stationary!
+
+# Make it stationary
+ndiffs(AirPassengers_seasdiff)  # number of differences need to make it stationary
+#> 1 
+stationaryTS <- diff(AirPassengers_seasdiff, differences= 1)
+plot(stationaryTS, type="l", main="Differenced and Stationary")  # appears to be stationary
+
+```
+Simple Moving Average
+Simple moving average can be calculated using ma() from forecast
+```{r}
+sm <- ma(TS, order=12) # 12 month moving average
+plot(sm, col="red") # plot
+```
+## The above is just a simple basic line plot for simple moving average.
